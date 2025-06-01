@@ -1,0 +1,163 @@
+name: publish
+
+on:
+  push:
+    # branches-ignore: [ main ]
+    # paths:
+    #   - '.github/workflows/publish.yml'
+  release:
+    types: [ published ]
+    
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  SDK_VERSION: 1.0.0 # This needs to be updated to set the version being compiled.
+  
+jobs:
+  prepare:
+    runs-on: windows-latest
+
+    outputs:
+      version_number: ${{ steps.set_version_number.outputs.version_number }}
+      version_suffix: ${{ steps.set_version_suffix.outputs.version_suffix }}
+      full_version: ${{ steps.set_version_number.outputs.version_number }}${{ steps.set_version_suffix.outputs.version_suffix != '' && '-' || '' }}${{ steps.set_version_suffix.outputs.version_suffix }}
+
+    steps:
+      - name: Set version number
+        id: set_version_number
+        shell: bash
+        run: echo "version_number=${{ env.SDK_VERSION }}" >> $GITHUB_OUTPUT
+
+      - name: Set version suffix
+        if: github.event.action != 'published'
+        id: set_version_suffix
+        shell: bash
+        run: echo "version_suffix=preview.${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+  build-native:
+    name: build (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.os }}-latest
+    needs: prepare
+
+    strategy:
+      matrix:
+        platform:
+          - { name: osx-x64, runner: macos, arch: x86_64  }
+      fail-fast: false
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create output folder
+        shell: bash
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/out
+  
+      - name: Build
+        shell: bash
+        working-directory: src
+        run: |
+          clang -O3 -arch ${{ matrix.platform.arch }} -dynamiclib support.c -o $GITHUB_WORKSPACE/out/libarmeilleure.dylib
+
+      - name: Prepare staging directory
+        shell: bash
+        run: mkdir -p dist/runtimes/${{ matrix.platform.name }}/native
+
+      - name: Transfer outputs
+        shell: bash
+        run: cp out/*.dylib dist/runtimes/${{ matrix.platform.name }}/native/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: "native-${{ matrix.platform.name }}"
+          path: "dist/"  
+  
+  package:
+    runs-on: windows-latest
+    needs: [ prepare, build-native ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Set up NuGet
+        uses: nuget/setup-nuget@v2
+        with:
+          nuget-api-key: ${{ secrets.NUGET_TOKEN }}
+          nuget-version: latest
+
+      - name: Package preview
+        if: github.event.action != 'published'
+        shell: pwsh
+        run: nuget pack Hyjinx.SDL2.native.nuspec -OutputDirectory ./out -Suffix "${{ needs.prepare.outputs.version_suffix }}" -Version "${{ needs.prepare.outputs.version_number }}"
+
+      - name: Package release
+        if: github.event.action == 'published'
+        shell: pwsh
+        run: nuget pack Hyjinx.SDL2.native.nuspec -OutputDirectory ./out -Version "${{ needs.prepare.outputs.version_number }}"
+        
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: ./out/*.nupkg
+    
+  publish:
+    runs-on: windows-latest
+    needs: package
+    if: true == false
+    
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: dist/
+
+      - name: Set up NuGet
+        uses: nuget/setup-nuget@v2
+        with:
+          nuget-api-key: ${{ secrets.NUGET_TOKEN }}
+          nuget-version: latest
+          
+      - name: Push package(s)
+        shell: powershell
+        run: |
+          Get-ChildItem -Path "dist" -Filter *.nupkg | ForEach-Object {
+            Write-Host "Pushing $($_.FullName)"
+            nuget push $_.FullName -Source https://api.nuget.org/v3/index.json
+          }
+
+  post-publish:
+    runs-on: ubuntu-latest
+    needs: [ prepare, publish ]
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: dist/
+          
+      - name: Publish
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.prepare.outputs.full_version }}
+          artifacts: "dist/*.*"
+          prerelease: ${{ github.event.action != 'published' }}
+          generateReleaseNotes: ${{ github.event.action != 'published' }}
+          allowUpdates: true
+          omitBodyDuringUpdate: true

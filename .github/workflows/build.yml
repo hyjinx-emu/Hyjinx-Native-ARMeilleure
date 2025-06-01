@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - { name: osx-x64,   runner: macos, arch: x86_64  }
+          - { name: osx-x64, runner: macos, arch: x86_64  }
 
     steps:
       - name: Checkout source
