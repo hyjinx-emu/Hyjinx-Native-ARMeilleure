@@ -1,0 +1,33 @@
+name: build
+
+on:
+  pull_request:
+    types: [opened, reopened]
+  push:
+    branches:
+      - main
+
+jobs:
+  build-native:
+    name: build (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}-latest
+
+    strategy:
+      matrix:
+        platform:
+          - { name: osx-x64, runner: macos, arch: x86_64  }
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Create staging folder
+        shell: bash
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/out
+
+      - name: Build
+        shell: bash
+        working-directory: src
+        run: |
+          clang -O3 -arch ${{ matrix.platform.arch }} -dynamiclib support.c -o $GITHUB_WORKSPACE/out/libarmeilleure-jitsupport.dylib
