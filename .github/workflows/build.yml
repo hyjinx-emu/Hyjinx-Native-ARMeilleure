@@ -12,7 +12,7 @@ jobs:
       matrix:
         platform:
           - { name: osx-x64,   runner: macos, arch: x86_64  }
-          # - { name: osx-arm64, runner: macos, arch: arm64   }
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -27,9 +27,3 @@ jobs:
         working-directory: src
         run: |
           clang -O3 -arch ${{ matrix.platform.arch }} -dynamiclib support.c -o $GITHUB_WORKSPACE/out/libarmeilleure-jitsupport.dylib
-
-      # - name: Upload artifact
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: native-${{ matrix.platform.name }}
-      #     path: dist/
