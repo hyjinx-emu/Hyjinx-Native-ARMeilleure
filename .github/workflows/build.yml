@@ -20,13 +20,13 @@ jobs:
       - name: Create staging folder
         shell: bash
         run: |
-          mkdir -p out/runtimes/osx-${{ matrix.platform.name }}/native
+          mkdir -p $GITHUB_WORKSPACE/out
 
       - name: Build
         shell: bash
         working-directory: src
         run: |
-          clang -O3 -arch ${{ matrix.platform.arch }} -dynamiclib support.c -o dist/runtimes/osx-${{ matrix.platform.name }}/native/libarmeilleure-jitsupport.dylib
+          clang -O3 -arch ${{ matrix.platform.arch }} -dynamiclib support.c -o $GITHUB_WORKSPACE/out/libarmeilleure-jitsupport.dylib
 
       # - name: Upload artifact
       #   uses: actions/upload-artifact@v4
